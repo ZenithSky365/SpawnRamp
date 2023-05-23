@@ -1,0 +1,93 @@
+util.require_natives(1676318796)
+util.keep_running()
+
+local spawned = {}
+
+local main_menu = menu.my_root()
+local shadow_menu = menu.shadow_root()
+local settings_menu = menu.list(main_menu, 'Settings')
+local ramp_model = menu.text_input(settings_menu, 'Ramp Model', {'rampmod'}, 'The object model of ramp to spawn', function(text, click ) end, 'prop_mp_ramp_03_tu')
+local max_spawned = menu.slider(settings_menu, 'Max Spawned', {'rampmax'}, 'How many ramps will be spawned before old ones are deleted', 1, 100, 10, 1, function(updated, previous, click) end)
+local despawn_time = menu.slider(settings_menu, 'Despawn Time', {'ramptime'}, 'How long the ramp will stay in seconds before despawning, -1 to disable', -1, 20, 3, 1, function(updated, previous, click) end)
+local local_only = menu.toggle(settings_menu, 'Local Only', {'ramplocal'}, 'State if ramps will be synced with other players or not', function(state, click) end, false)
+local ground_options = menu.list_select(settings_menu, 'Ground', {'rampground'}, 'How the ramp will be placed relative to the ground', {'Disabled', 'Map', 'Objects'}, 2, function(value, name, old, click) end)
+local offset_menu = menu.list(settings_menu, 'Offset')
+local offset_x = menu.slider_float(offset_menu, 'Left / Right', {'rampx'}, 'Ramp offset x', -100000, 100000, 0, 100, function(updated, previous, click) end)
+local offset_y = menu.slider_float(offset_menu, 'Backwards / Forwards', {'rampy'}, 'Ramp offset y', -100000, 100000, 1200, 100, function(updated, previous, click) end)
+local offset_z = menu.slider_float(offset_menu, 'Down / Up', {'rampz'}, 'Ramp offset z', -100000, 100000, -100, 100, function(updated, previous, click) end)
+local offset_r = menu.slider_float(offset_menu, 'Counterclockwise / Clockwise', {'ramprot'}, 'Ramp offset rotation', -360000, 360000, 0, 100, function(updated, previous, click) end)
+
+local function spawn_object(click, issuer)
+    local player = PLAYER.GET_PLAYER_PED(issuer)
+
+    if player then
+        local pos = ENTITY.GET_ENTITY_COORDS(player)
+        local forward = ENTITY.GET_OFFSET_FROM_ENTITY_IN_WORLD_COORDS(player, (offset_x.value / 100), (offset_y.value / 100), (offset_z.value / 100))
+        local heading = ENTITY.GET_ENTITY_HEADING(player)
+        local removal_amount = (#spawned + 1) - max_spawned.value
+
+        if removal_amount > 0 then
+            local remap = {}
+
+            for index, object in pairs(spawned) do
+                if index > removal_amount then
+                    remap[#remap + 1] = object
+                else
+                    entities.delete_by_handle(object.obj)
+                end
+            end
+            spawned = remap
+        end
+
+        local object = OBJECT.CREATE_OBJECT(util.joaat(ramp_model.value), forward.x, forward.y, forward.z, not local_only.value, true, false)
+        NETWORK.SET_NETWORK_ID_EXISTS_ON_ALL_MACHINES(NETWORK.OBJ_TO_NET(object), true)
+        local ground = ground_options.value
+        ENTITY.SET_ENTITY_HEADING(object, heading + (offset_r.value / 100))
+
+        if ground == 2 then
+            OBJECT.PLACE_OBJECT_ON_GROUND_PROPERLY(object)
+        elseif ground == 3 then
+            OBJECT.PLACE_OBJECT_ON_GROUND_OR_OBJECT_PROPERLY(object)
+        end
+
+        spawned[#spawned + 1] = {obj = object, created = util.current_time_millis()}
+    end
+end
+
+local function delete_object(object, attempts = 10)
+    repeat
+        entities.delete_by_handle(object)
+        util.yield(100)
+        --attempts
+    until NETWORK.OBJ_TO_NET(object) or attempts > 0
+end
+
+local function despawn_ramps(click, issuer)
+    for spawned as ramp do
+        delete_object(ramp.obj)
+    end
+end
+
+menu.divider(main_menu, 'Ramp')
+local spawn_ramp = menu.action(main_menu, 'Spawn Ramp', {'ramp'}, 'Spawn a ramp in front of you', spawn_object, nil, nil, COMMANDPERM_SPAWN)
+local delete_ramps = menu.action(main_menu, 'Delete Ramp', {'delramps'}, 'Delete any spawn rampeds', despawn_ramps, nil, nil, COMMANDPERM_SPAWN)
+local settings_div = menu.divider(main_menu, 'Options')
+menu.attach_after(settings_div, menu.detach(settings_menu))
+
+util.on_stop(despawn_ramps)
+
+while SCRIPT_CAN_CONTINUE do
+    if despawn_time.value > 0 then
+        local remap = {}
+
+        for spawned as ramp do
+            if ramp and ramp.created + (despawn_time.value * 1000) > util.current_time_millis() then
+                remap[#remap + 1] = ramp
+            else
+                delete_object(ramp.obj)      
+            end
+        end
+        spawned = remap
+    end
+    util.yield(1000)
+end
