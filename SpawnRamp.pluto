@@ -33,7 +33,9 @@ local function spawn_object(click, issuer)
                 if index > removal_amount then
                     remap[#remap + 1] = object
                 else
-                    entities.delete_by_handle(object.obj)
+                    if not delete_object(object.obj) then
+                        remap[#remap + 1] = object
+                    end
                 end
             end
             spawned = remap
@@ -60,6 +62,7 @@ local function delete_object(object, attempts = 10)
         util.yield(100)
         --attempts
     until NETWORK.OBJ_TO_NET(object) or attempts > 0
+    return attempts > 0
 end
 
 local function despawn_ramps(click, issuer)
@@ -84,7 +87,9 @@ while SCRIPT_CAN_CONTINUE do
             if ramp and ramp.created + (despawn_time.value * 1000) > util.current_time_millis() then
                 remap[#remap + 1] = ramp
             else
-                delete_object(ramp.obj)      
+                if not delete_object(ramp.obj) then
+                    remap[#remap + 1] = ramp
+                end
             end
         end
         spawned = remap
