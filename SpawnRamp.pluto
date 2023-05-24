@@ -33,6 +33,20 @@ local spawned = {}
 local horn_players = {}
 local horn_delayed = {}
 
+local function horn_ramp(click, issuer)
+    local player = PLAYER.GET_PLAYER_PED(issuer)
+
+    if player then
+        if not horn_players[issuer] then
+            horn_players[issuer] = player
+            util.toast('[SpawnRamp] Added player ' .. players.get_name(issuer) .. ' to horn ramp players')
+        else
+            horn_players[issuer] = nil
+            util.toast('[SpawnRamp] Removed player ' .. players.get_name(issuer) .. ' to horn ramp players')
+        end
+    end
+end
+
 local main_menu = menu.my_root()
 local shadow_menu = menu.shadow_root()
 local settings_menu = menu.list(main_menu, 'Settings')
@@ -47,13 +61,14 @@ local offset_x = menu.slider_float(offset_menu, 'Left / Right', {'rampx'}, 'Ramp
 local offset_y = menu.slider_float(offset_menu, 'Backwards / Forwards', {'rampy'}, 'Ramp offset y', -100000, 100000, 1200, 100, function(updated, previous, click) end)
 local offset_z = menu.slider_float(offset_menu, 'Down / Up', {'rampz'}, 'Ramp offset z', -100000, 100000, -100, 100, function(updated, previous, click) end)
 local offset_r = menu.slider_float(offset_menu, 'Counterclockwise / Clockwise', {'ramprot'}, 'Ramp offset rotation', -360000, 360000, 0, 100, function(updated, previous, click) end)
+local enable_horn = menu.action(main_menu, 'Horn Ramp', {'ramphorn'}, 'Makes ramps spawn when you honk.', horn_ramp, nil, nil, COMMANDPERM_SPAWN)
 
 local function delete_object(object, attempts = 10)
     repeat
         entities.delete_by_handle(object)
         util.yield(100)
         --attempts
-    until NETWORK.OBJ_TO_NET(object) or attempts > 0
+    until not NETWORK.OBJ_TO_NET(object) or attempts > 0
     return attempts > 0
 end
 
@@ -100,24 +115,16 @@ local function despawn_ramps(click, issuer)
     for spawned as ramp do
         delete_object(ramp.obj)
     end
-end
 
-local function horn_ramp(click, issuer)
-    local player = PLAYER.GET_PLAYER_PED(issuer)
-
-    if player then
-        if not horn_players[issuer] then
-            horn_players[issuer] = player
-            util.toast('[SpawnRamp] Added player ' .. players.get_name(issuer) .. ' to horn ramp players')
-        else
-            horn_players[issuer] = nil
-            util.toast('[SpawnRamp] Removed player ' .. players.get_name(issuer) .. ' to horn ramp players')
+    for index, point in pairs(entities.get_all_objects_as_pointers()) do
+        if entities.get_model_hash(point) == util.joaat(ramp_model.value) then
+            entities.delete_by_pointer(point)
         end
     end
 end
 
 local function horn_check()
-    if horn_ramps.value then
+    if enable_horn.value then
         for slot, plyer in pairs(horn_players) do
             if PLAYER.IS_PLAYER_PRESSING_HORN(slot) then
                 if not horn_delayed[slot] then
@@ -154,10 +161,10 @@ end
 menu.divider(main_menu, 'Ramp')
 local spawn_ramp = menu.action(main_menu, 'Spawn Ramp', {'ramp'}, 'Spawn a ramp in front of you', spawn_object, nil, nil, COMMANDPERM_SPAWN)
 local delete_ramps = menu.action(main_menu, 'Delete Ramp', {'rampclear'}, 'Delete any spawn rampeds', despawn_ramps, nil, nil, COMMANDPERM_RUDE)
-local horn_ramp = menu.action(main_menu, 'Horn Ramp', {'ramphorn'}, 'Makes ramps spawn when you honk.', horn_ramp, nil, nil, COMMANDPERM_SPAWN)
 local settings_div = menu.divider(main_menu, 'Options')
 menu.attach_after(settings_div, menu.detach(settings_menu))
 menu.attach_before(local_only, menu.detach(horn_ramps))
+menu.attach_after(delete_ramps, menu.detach(enable_horn))
 
 util.on_stop(despawn_ramps)
 
