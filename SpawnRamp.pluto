@@ -37,8 +37,9 @@ local main_menu = menu.my_root()
 local shadow_menu = menu.shadow_root()
 local settings_menu = menu.list(main_menu, 'Settings')
 local ramp_model = menu.text_input(settings_menu, 'Ramp Model', {'rampmod'}, 'The object model of ramp to spawn', function(text, click ) end, 'prop_mp_ramp_03_tu')
-local max_spawned = menu.slider(settings_menu, 'Max Spawned', {'rampmax'}, 'How many ramps will be spawned before old ones are deleted', 1, 100, 10, 1, function(updated, previous, click) end)
+local max_spawned = menu.slider(settings_menu, 'Max Spawned', {'rampmax'}, 'How many ramps will be spawned before old ones are deleted', 1, 1000, 100, 1, function(updated, previous, click) end)
 local despawn_time = menu.slider(settings_menu, 'Despawn Time', {'ramptime'}, 'How long the ramp will stay in seconds before despawning, -1 to disable', -1, 20, 3, 1, function(updated, previous, click) end)
+local horn_ramps = menu.toggle(settings_menu, 'Horn Ramps', {'hornramps'}, 'Enable the use of horn ramps and players being able to join through chat commands', function(state, click) end, true)
 local local_only = menu.toggle(settings_menu, 'Local Only', {'ramplocal'}, 'State if ramps will be synced with other players or not', function(state, click) end, false)
 local ground_options = menu.list_select(settings_menu, 'Ground', {'rampground'}, 'How the ramp will be placed relative to the ground', {'Disabled', 'Map', 'Objects'}, 2, function(value, name, old, click) end)
 local offset_menu = menu.list(settings_menu, 'Offset')
@@ -101,22 +102,6 @@ local function despawn_ramps(click, issuer)
     end
 end
 
-local function horn_check()
-    for slot, plyer in pairs(horn_players) do
-        if PLAYER.IS_PLAYER_PRESSING_HORN(slot) then
-            if not horn_delayed[slot] then
-                spawn_object(nil, slot)
-                horn_delayed[slot] = util.current_time_millis()
-            elseif util.current_time_millis() > (horn_delayed[slot] + (despawn_time.value * 1000)) then
-                spawn_object(nil, slot)
-                horn_delayed[slot] = util.current_time_millis()
-            end
-        else
-            horn_delayed[slot] = nil
-        end
-    end
-end
-
 local function horn_ramp(click, issuer)
     local player = PLAYER.GET_PLAYER_PED(issuer)
 
@@ -131,18 +116,25 @@ local function horn_ramp(click, issuer)
     end
 end
 
-local horn_ramps = menu.toggle_loop(settings_menu, 'Horn Ramps', {'hornramps'}, 'Enable the use of horn ramps and players being able to join through chat commands', function() horn_check() util.yield() end, function() end)
-menu.divider(main_menu, 'Ramp')
-local spawn_ramp = menu.action(main_menu, 'Spawn Ramp', {'ramp'}, 'Spawn a ramp in front of you', spawn_object, nil, nil, COMMANDPERM_SPAWN)
-local delete_ramps = menu.action(main_menu, 'Delete Ramp', {'rampclear'}, 'Delete any spawn rampeds', despawn_ramps, nil, nil, COMMANDPERM_RUDE)
-local horn_ramp = menu.action(main_menu, 'Horn Ramp', {'ramphorn'}, 'Makes ramps spawn when you honk.', horn_ramp, nil, nil, COMMANDPERM_SPAWN)
-local settings_div = menu.divider(main_menu, 'Options')
-menu.attach_after(settings_div, menu.detach(settings_menu))
-menu.attach_before(local_only, menu.detach(horn_ramps))
+local function horn_check()
+    if horn_ramps.value then
+        for slot, plyer in pairs(horn_players) do
+            if PLAYER.IS_PLAYER_PRESSING_HORN(slot) then
+                if not horn_delayed[slot] then
+                    spawn_object(nil, slot)
+                    horn_delayed[slot] = util.current_time_millis()
+                elseif util.current_time_millis() > (horn_delayed[slot] + (despawn_time.value * 1000)) then
+                    spawn_object(nil, slot)
+                    horn_delayed[slot] = util.current_time_millis()
+                end
+            else
+                horn_delayed[slot] = nil
+            end
+        end
+    end
+end
 
-util.on_stop(despawn_ramps)
-
-while SCRIPT_CAN_CONTINUE do
+local function check_despawn()
     if despawn_time.value > 0 then
         local remap = {}
 
@@ -157,5 +149,22 @@ while SCRIPT_CAN_CONTINUE do
         end
         spawned = remap
     end
-    util.yield(1000)
+end
+
+menu.divider(main_menu, 'Ramp')
+local spawn_ramp = menu.action(main_menu, 'Spawn Ramp', {'ramp'}, 'Spawn a ramp in front of you', spawn_object, nil, nil, COMMANDPERM_SPAWN)
+local delete_ramps = menu.action(main_menu, 'Delete Ramp', {'rampclear'}, 'Delete any spawn rampeds', despawn_ramps, nil, nil, COMMANDPERM_RUDE)
+local horn_ramp = menu.action(main_menu, 'Horn Ramp', {'ramphorn'}, 'Makes ramps spawn when you honk.', horn_ramp, nil, nil, COMMANDPERM_SPAWN)
+local settings_div = menu.divider(main_menu, 'Options')
+menu.attach_after(settings_div, menu.detach(settings_menu))
+menu.attach_before(local_only, menu.detach(horn_ramps))
+
+util.on_stop(despawn_ramps)
+
+horn_players[players.user()] = players.user_ped()
+
+while SCRIPT_CAN_CONTINUE do
+    horn_check()
+    check_despawn()
+    util.yield()
 end
