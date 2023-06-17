@@ -168,7 +168,14 @@ menu.attach_after(delete_ramps, menu.detach(enable_horn))
 
 util.on_stop(despawn_ramps)
 
-horn_players[players.user()] = players.user_ped()
+players.on_join(function(player_index)
+    if player_index == players.user() then
+        horn_players[player_index] = players.user_ped()
+    else
+        horn_players[player_index] = nil
+    end
+end)
+players.dispatch_on_join()
 
 while SCRIPT_CAN_CONTINUE do
     horn_check()
